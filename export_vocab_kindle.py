@@ -12,7 +12,6 @@ from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from textblob import TextBlob
 
  
-downloaded_filename = []
 
 class KeywordGoogleImageCrawler(GoogleImageCrawler):
 
@@ -111,10 +110,6 @@ class KeywordNameDownloader(ImageDownloader):
                 self.fetched_num += 1
                 filename = self.get_filename(task, default_ext,keyword)
                 if self.storage.exists(filename):
-                  
-                    global  downloaded_filename 
-                    downloaded_filename.append(filename)
-
                     self.logger.info('skip downloading file %s', filename)
                     return
                 self.fetched_num -= 1
@@ -160,22 +155,26 @@ class KindleToAnki:
   def get_data_from_database(self, path = "/Volumes/Kindle/system/vocabulary/vocab.db"):
     con = sqlite3.connect(path)
     cur = con.cursor()
-    cur.execute("SELECT word, id FROM words")
-    words_and_ids = cur.fetchall()
-    print(words_and_ids)
+    cur.execute("SELECT word, lang, stem FROM words")
+    word_stem_lang = cur.fetchall()
+    print(word_stem_lang)
 
-    word_to_bare = {}
+    self.word_dict = {} # word -> [lang, stem, usage]
     # Modify data 
-    for tup in words_and_ids: 
-        word_to_bare[tup[0]] = tup[1][3:]
-    self.word_to_bare = word_to_bare
-
-    word_to_usage = {}
+    for tup in word_stem_lang: 
+      self.word_dict[tup[0]] = [tup[1], tup[2]]
+    
     cur.execute("SELECT word_key, usage FROM lookups")
     words_and_usages = cur.fetchall()
     for tup in words_and_usages:
-        word_to_usage[tup[0][3:]] = tup[1]
-    self.word_to_usage = word_to_usage
+      self.word_dict[tup[0][3:]].append(tup[1])
+
+    # Delete database
+    # cur.execute("DROP TABLE lookups")
+    # cur.execute("DROP TABLE words")
+    # print("Deleted")
+
+
   
   def create_deck_anki(self):
     self.my_model = genanki.Model(
@@ -217,6 +216,7 @@ class KindleToAnki:
     # add location of img or audio file
     self.my_package.media_files.append('images/' + img_name)
     self.my_package.media_files.append('sounds/' + sound_name) 
+    print("Added new word successfully : %s | %s | %s | %s" % (word, img_name, sound_name, translation))
 
   def export_deck(self):
     self.my_package.write_to_file('output.apkg')
@@ -231,17 +231,17 @@ class KindleToAnki:
       return "error"
 
   def generate_note(self):
-    for word in self.word_to_bare.keys():
-      bare = self.word_to_bare[word]
-      usage = self.word_to_usage[word]
+    for word in self.word_dict.keys():
+      stem = self.word_dict[word][1]
+      usage = self.word_dict[word][2]
       translation = self.translate(word)
       sound_name = word + '.mp3'
       self.google_crawler.crawl(keyword=word, max_num=1) 
-      global downloaded_filename
-      img_name = downloaded_filename[-1]
+      img_name = word + "000001.jpg"
+      if not os.path.exists("images/" + img_name):
+        img_name = word + "000001.png"
       self.text_to_speech_file(word, "sounds/" + sound_name)
-      self.add_note_to_anki(word, img_name, sound_name, translation, usage)
-      print("Add word %s successfully!" % (word))
+      self.add_note_to_anki(word + "->" + stem, img_name, sound_name, translation, usage)
 
 anki = KindleToAnki()
 anki.get_data_from_database()
