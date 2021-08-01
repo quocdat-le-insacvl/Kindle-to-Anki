@@ -1,0 +1,5 @@
+genanki 
+icrawler
+gtts
+nltk
+textblob
