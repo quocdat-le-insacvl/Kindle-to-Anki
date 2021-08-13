@@ -1,163 +1,55 @@
+import os
 import sqlite3
+
+
+import time
 import genanki
 from gtts import gTTS 
-import os
-
-from icrawler.builtin import GoogleImageCrawler
-from icrawler import ImageDownloader
 from PIL import Image
 from six import BytesIO
 import nltk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from textblob import TextBlob
+import eng_to_ipa as Ipa
 
- 
 
-class KeywordGoogleImageCrawler(GoogleImageCrawler):
+# https://stackoverflow.com/questions/3173320/text-progress-bar-in-the-console
+# Print iterations progress
+def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
+    """
+    Call in a loop to create terminal progress bar
+    @params:
+        iteration   - Required  : current iteration (Int)
+        total       - Required  : total iterations (Int)
+        prefix      - Optional  : prefix string (Str)
+        suffix      - Optional  : suffix string (Str)
+        decimals    - Optional  : positive number of decimals in percent complete (Int)
+        length      - Optional  : character length of bar (Int)
+        fill        - Optional  : bar fill character (Str)
+        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+    """
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + '-' * (length - filledLength)
+    print(f'\r{prefix} |{bar}| {percent}% {suffix}', end = printEnd)
+    # Print New Line on Complete
+    if iteration == total: 
+        print()
 
-    def crawl(self,
-              keyword,
-              filters=None,
-              offset=0,
-              max_num=1000,
-              min_size=None,
-              max_size=None,
-              language=None,
-              file_idx_offset=0,
-              overwrite=False):
-        if offset + max_num > 1000:
-            if offset > 1000:
-                self.logger.error(
-                    '"Offset" cannot exceed 1000, otherwise you will get '
-                    'duplicated searching results.')
-                return
-            elif max_num > 1000:
-                max_num = 1000 - offset
-                self.logger.warning(
-                    'Due to Google\'s limitation, you can only get the first '
-                    '1000 result. "max_num" has been automatically set to %d. '
-                    'If you really want to get more than 1000 results, you '
-                    'can specify different date ranges.', 1000 - offset)
-
-        feeder_kwargs = dict(
-            keyword=keyword,
-            offset=offset,
-            max_num=max_num,
-            language=language,
-            filters=filters)
-        downloader_kwargs = dict(
-            keyword=keyword,  #<<< add this line
-            max_num=max_num,
-            min_size=min_size,
-            max_size=max_size,
-            file_idx_offset=file_idx_offset,
-            overwrite=overwrite)
-        super(GoogleImageCrawler, self).crawl(
-            feeder_kwargs=feeder_kwargs, downloader_kwargs=downloader_kwargs)
-
-class KeywordNameDownloader(ImageDownloader):
-    def get_filename(self, task, default_ext, keyword):
-        filename = super(KeywordNameDownloader, self).get_filename(
-            task, default_ext)
-        return keyword + filename
-
-    def keep_file(self, task, response, min_size=None, max_size=None, **kwargs):
-        """Decide whether to keep the image
-
-        Compare image size with ``min_size`` and ``max_size`` to decide.
-
-        Args:
-            response (Response): response of requests.
-            min_size (tuple or None): minimum size of required images.
-            max_size (tuple or None): maximum size of required images.
-        Returns:
-            bool: whether to keep the image.
-        """
-        try:
-            img = Image.open(BytesIO(response.content))
-        except (IOError, OSError):
-            return False
-        task['img_size'] = img.size
-        if min_size and not self._size_gt(img.size, min_size):
-            return False
-        if max_size and not self._size_lt(img.size, max_size):
-            return False
-        return True
-
-    def download(self,
-                 task,
-                 default_ext,
-                 timeout=5,
-                 max_retry=3,
-                 overwrite=False,
-                 **kwargs):
-        """Download the image and save it to the corresponding path.
-
-        Args:
-            task (dict): The task dict got from ``task_queue``.
-            timeout (int): Timeout of making requests for downloading images.
-            max_retry (int): the max retry times if the request fails.
-            **kwargs: reserved arguments for overriding.
-        """
-        file_url = task['file_url']
-        task['success'] = False
-        task['filename'] = None
-        retry = max_retry
-        keyword = kwargs['keyword']
-
-        if not overwrite:
-            with self.lock:
-                self.fetched_num += 1
-                filename = self.get_filename(task, default_ext,keyword)
-                if self.storage.exists(filename):
-                    self.logger.info('skip downloading file %s', filename)
-                    return
-                self.fetched_num -= 1
-
-        while retry > 0 and not self.signal.get('reach_max_num'):
-            try:
-                response = self.session.get(file_url, timeout=timeout)
-            except Exception as e:
-                self.logger.error('Exception caught when downloading file %s, '
-                                  'error: %s, remaining retry times: %d',
-                                  file_url, e, retry - 1)
-            else:
-                if self.reach_max_num():
-                    self.signal.set(reach_max_num=True)
-                    break
-                elif response.status_code != 200:
-                    self.logger.error('Response status code %d, file %s',
-                                      response.status_code, file_url)
-                    break
-                elif not self.keep_file(task, response, **kwargs):
-                    break
-                with self.lock:
-                    self.fetched_num += 1
-                    filename = self.get_filename(task, default_ext,keyword)
-                self.logger.info('image #%s\t%s', self.fetched_num, file_url)
-                self.storage.write(filename, response.content)
-                task['success'] = True
-                task['filename'] = filename
-                break
-            finally:
-                retry -= 1
 
 class KindleToAnki:
-
-  def __init__(self):
-    self.google_crawler = KeywordGoogleImageCrawler(downloader_cls=KeywordNameDownloader, storage={'root_dir': 'images'})
-
   def text_to_speech_file(self, text, output_file = 'text.mp3', language = 'en'):
     speech = gTTS(text = text, lang = language, slow = False)
     speech.save(output_file)
     return output_file
 
-  def get_data_from_database(self, path = "/Volumes/Kindle/system/vocabulary/vocab.db"):
+  def get_data_from_database(self, path = "/media/nightfury/Kindle/system/vocabulary/vocab.db"):
+    print("Path :",path)
     con = sqlite3.connect(path)
     cur = con.cursor()
     cur.execute("SELECT word, lang, stem FROM words")
     word_stem_lang = cur.fetchall()
-    print(word_stem_lang)
+    # print(word_stem_lang)
 
     self.word_dict = {} # word -> [lang, stem, usage]
     # Modify data 
@@ -182,7 +74,7 @@ class KindleToAnki:
       'Example',
       fields=[
         {'name': 'Word'},
-        {'name': 'Image'},
+        {'name': 'Ipa'},
         {'name': 'Sound'},
         {'name': 'Definition'},
         {'name': 'Usage'}
@@ -191,32 +83,31 @@ class KindleToAnki:
         {
           'name': 'Card 1',
           'qfmt': '{{Word}}',
-          'afmt': '{{FrontSide}}<hr id="answer">{{Image}} <br> {{Definition}}<br>{{Sound}} <br> {{Usage}}'  
+          'afmt': '{{FrontSide}} {{Ipa}} <br> <hr id="answer">{{Definition}}<br>{{Sound}} <br> {{Usage}}'  
         },
       ])
 
     self.my_deck = genanki.Deck(
       2059400191,
-      'Automate Deck')
+      'Google')
 
     self.my_package = genanki.Package(self.my_deck)
     self.my_package.media_files = []
     # Add note after this line
   
-  def add_note_to_anki(self, word, img_name, sound_name, translation, usage):
+  def add_note_to_anki(self, word, sound_name, translation, usage, ipa):
     note = genanki.Note(
       model=self.my_model,
       fields=[word, 
-        '<img src="{}">'.format(img_name), 
+        ipa,
         "[sound:{}]".format(sound_name),
         translation,
         usage
         ])
     self.my_deck.add_note(note)
     # add location of img or audio file
-    self.my_package.media_files.append('images/' + img_name)
     self.my_package.media_files.append('sounds/' + sound_name) 
-    print("Added new word successfully : %s | %s | %s | %s" % (word, img_name, sound_name, translation))
+    print("Added new word successfully : %s | %s | %s | %s" % (word, ipa, sound_name, translation))
 
   def export_deck(self):
     self.my_package.write_to_file('output.apkg')
@@ -231,20 +122,22 @@ class KindleToAnki:
       return "error"
 
   def generate_note(self):
+    i = 0
+    l = len(self.word_dict.keys())
     for word in self.word_dict.keys():
       stem = self.word_dict[word][1]
       usage = self.word_dict[word][2]
-      translation = self.translate(word)
+      translation = self.translate(stem)
       sound_name = word + '.mp3'
-      self.google_crawler.crawl(keyword=word, max_num=1) 
-      img_name = word + "000001.jpg"
-      if not os.path.exists("images/" + img_name):
-        img_name = word + "000001.png"
       self.text_to_speech_file(word, "sounds/" + sound_name)
-      self.add_note_to_anki(word + "->" + stem, img_name, sound_name, translation, usage)
+      ipa = Ipa.convert(stem)
+      self.add_note_to_anki(stem, sound_name, translation, usage, ipa)
+      printProgressBar(i + 1, l, prefix = 'Progress:', suffix = 'Complete', length = 50)
+      i+=1
 
 anki = KindleToAnki()
-anki.get_data_from_database()
+  
+anki.get_data_from_database(path = "./vocab.db")
 anki.create_deck_anki()
 anki.generate_note()
 anki.export_deck()

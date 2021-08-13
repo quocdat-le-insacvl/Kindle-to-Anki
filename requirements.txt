@@ -3,3 +3,4 @@ icrawler
 gtts
 nltk
 textblob
+eng_to_ipa
