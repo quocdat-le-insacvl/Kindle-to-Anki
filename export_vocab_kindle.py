@@ -12,6 +12,8 @@ from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from textblob import TextBlob
 import eng_to_ipa as Ipa
 
+from PyDictionary import PyDictionary
+
 
 # https://stackoverflow.com/questions/3173320/text-progress-bar-in-the-console
 # Print iterations progress
@@ -38,12 +40,15 @@ def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, 
 
 
 class KindleToAnki:
+  def __init__(self):
+    self.pydict = PyDictionary()
+
   def text_to_speech_file(self, text, output_file = 'text.mp3', language = 'en'):
     speech = gTTS(text = text, lang = language, slow = False)
     speech.save(output_file)
     return output_file
 
-  def get_data_from_database(self, path = "/media/nightfury/Kindle/system/vocabulary/vocab.db"):
+  def get_data_from_database(self, path =  "/media/nightfury/Kindle/system/vocabulary/vocab.db"):
     print("Path :",path)
     con = sqlite3.connect(path)
     cur = con.cursor()
@@ -76,41 +81,64 @@ class KindleToAnki:
         {'name': 'Word'},
         {'name': 'Ipa'},
         {'name': 'Sound'},
+        {'name': 'Translation'},
         {'name': 'Definition'},
         {'name': 'Usage'}
       ],
       templates=[
         {
           'name': 'Card 1',
-          'qfmt': '{{Word}}',
-          'afmt': '{{FrontSide}} {{Ipa}} <br> <hr id="answer">{{Definition}}<br>{{Sound}} <br> {{Usage}}'  
+          'qfmt': '{{Word}}   {{Ipa}}',
+          'afmt': '{{FrontSide}} <br> <hr id="answer"> {{Translation}} <br> {{Usage}} {{Sound}} <br>  {{Definition}} '  
         },
       ])
 
     self.my_deck = genanki.Deck(
-      2059400191,
+      # 2059400191,
+      205940019,
       'Google')
 
     self.my_package = genanki.Package(self.my_deck)
     self.my_package.media_files = []
     # Add note after this line
   
-  def add_note_to_anki(self, word, sound_name, translation, usage, ipa):
+  def add_note_to_anki(self, word, sound_name, translation, usage, ipa, meaning):
     note = genanki.Note(
       model=self.my_model,
       fields=[word, 
         ipa,
         "[sound:{}]".format(sound_name),
         translation,
-        usage
+        meaning,
+        usage,
         ])
     self.my_deck.add_note(note)
     # add location of img or audio file
     self.my_package.media_files.append('sounds/' + sound_name) 
-    print("Added new word successfully : %s | %s | %s | %s" % (word, ipa, sound_name, translation))
+    print("Added new word successfully : %s | %s | %s " % (word, ipa, sound_name))
 
   def export_deck(self):
     self.my_package.write_to_file('output.apkg')
+
+  # def translate(self, text, language = 'vi'):
+    # print("translate : " , text)
+    # translate = self.pydict.translate(text, "vi")
+    # return translate
+
+  def meaning(self, text, language = 'vi'):
+    meaning = self.pydict.meaning(text)
+    if meaning is None:
+      return "Unrecognized word in the database :("
+
+    # Transform to a string-like
+    s = "-------<b>Definition:</b>-------<br>"
+    for form in meaning.keys():
+      s += '<b>'+ form + ':</b>' + '<br>'
+      # print(meaning[form])
+      fix_meaning = "<br> - ".join(meaning[form]) + "<br>"
+      fix_meaning = fix_meaning.replace(text, '<b>' + text + '</b>')
+      s += fix_meaning
+    return s
 
   def translate(self, text, language = 'vi'):
     try:
@@ -119,28 +147,36 @@ class KindleToAnki:
       return str(vi)
     except Exception as E:
       print(E)
-      return "error"
+      return "error (Max=~100 words per day)"
 
   def generate_note(self):
     i = 0
+    # For testing : 
+    # self.word_dict = {"book":["pass", "book", "I have a book"], "school": ["pass", "school", "I go to school"]}
     l = len(self.word_dict.keys())
     for word in self.word_dict.keys():
       stem = self.word_dict[word][1]
-      usage = self.word_dict[word][2]
-      translation = self.translate(stem)
-      sound_name = word + '.mp3'
-      self.text_to_speech_file(word, "sounds/" + sound_name)
-      ipa = Ipa.convert(stem)
-      self.add_note_to_anki(stem, sound_name, translation, usage, ipa)
+      usage = "<b>Usage:</b> <br>"
+      usage += self.word_dict[word][2]
+      usage = usage.replace(stem, '<b>' + stem + '</b>')
+      translation = "<b>Translation:</b><br>"
+      translation += self.translate(stem)
+      meaning = self.meaning(stem)
+      sound_name = stem + '.mp3'
+      self.text_to_speech_file(stem, "sounds/" + sound_name)
+      ipa = '->   /' + Ipa.convert(stem) + '/' 
+      self.add_note_to_anki(stem, sound_name, translation, usage, ipa, meaning)
       printProgressBar(i + 1, l, prefix = 'Progress:', suffix = 'Complete', length = 50)
       i+=1
 
 anki = KindleToAnki()
   
-anki.get_data_from_database(path = "./vocab.db")
+# anki.get_data_from_database(path = "./vocab.db")
+anki.get_data_from_database()
 anki.create_deck_anki()
 anki.generate_note()
 anki.export_deck()
+print("Added ", len(anki.word_dict.keys())," new words !")
 print("Job done, thank you for using our service")
 
 
