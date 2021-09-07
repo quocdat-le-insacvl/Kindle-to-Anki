@@ -4,3 +4,12 @@ gtts
 nltk
 textblob
 eng_to_ipa
+PyDictionary
+beautifulsoup4
+certifi
+chardet
+idna
+requests
+soupsieve
+urllib3
+google_images_download
