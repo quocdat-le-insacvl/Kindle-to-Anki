@@ -171,8 +171,8 @@ class KindleToAnki:
 
 anki = KindleToAnki()
   
-# anki.get_data_from_database(path = "./vocab.db")
-anki.get_data_from_database()
+anki.get_data_from_database(path = "./vocab.db")
+# anki.get_data_from_database()
 anki.create_deck_anki()
 anki.generate_note()
 anki.export_deck()
